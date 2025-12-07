@@ -4,21 +4,31 @@ import com.mygame.main.MainFrame;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.event.KeyEvent;
+import java.util.List;
 
 public class Player {
 
     private int x, y;
-    private int dx, dy;
+    private int dx, dy; 
     private final int SPEED = 5; 
-    private final int SIZE = 30; // 飛機寬高
+    private final int SIZE = 30; 
     
-    // 射擊邏輯
+    // --- HP 系統 ---
+    private int maxHp = 100;
+    private int currentHp = 100;
+    private boolean isAlive = true;
+    
+    // 無敵時間
+    private boolean isInvulnerable = false;
+    private long invulnerabilityEndTime = 0;
+    private final long INVULNERABILITY_DURATION = 500;
+    
+    // 射擊相關
     private boolean isShooting = false;
     private long lastShotTime = -2000;
-    private final long SHOOT_COOLDOWN = 200;
+    private final long SHOOT_COOLDOWN = 150; 
     
-    // 垂直移動上限
-    private final int MAX_Y_TOP = 400; 
+    // 【注意】這裡已經沒有 MAX_Y_TOP 變數了
 
     public Player(int startX, int startY) {
         this.x = startX;
@@ -27,107 +37,105 @@ public class Player {
         this.dy = 0;
     }
 
-    // 遊戲邏輯更新 (已包含邊界限制)
     public void update() {
+        // 無敵時間檢查
+        if (isInvulnerable && System.currentTimeMillis() > invulnerabilityEndTime) {
+            isInvulnerable = false;
+        }
+
+        // 1. 移動邏輯
         x += dx * SPEED;
         y += dy * SPEED;
         
-        // --- 水平邊界檢查 ---
+        // 2. 邊界限制
         if (x < 0) x = 0;
+        if (x > MainFrame.GAME_WIDTH - SIZE) x = MainFrame.GAME_WIDTH - SIZE;
         
-        final int MAX_X = MainFrame.GAME_WIDTH - SIZE;
-        if (x > MAX_X) x = MAX_X;
+        // 【關鍵修正】 這裡直接使用 0，不再使用 MAX_Y_TOP
+        if (y < 0) y = 0; 
         
-        // --- 垂直邊界檢查 ---
-        if (y < MAX_Y_TOP) y = MAX_Y_TOP; 
-        
-        final int MAX_Y_BOTTOM = MainFrame.GAME_HEIGHT - SIZE;
-        if (y > MAX_Y_BOTTOM) y = MAX_Y_BOTTOM;
+        if (y > MainFrame.GAME_HEIGHT - SIZE) y = MainFrame.GAME_HEIGHT - SIZE;
     }
 
-    public void draw(Graphics g) {
-        g.setColor(Color.CYAN);
-        g.fillRect(x, y, SIZE, SIZE);
+    // --- 自動射擊偵測邏輯 ---
+    public void checkEnemyDetection(List<Enemy> enemies) {
+        isShooting = false; 
+
+        int myLeft = this.x;
+        int myRight = this.x + SIZE;
+
+        for (Enemy enemy : enemies) {
+            if (enemy.isVisible()) {
+                int enemyLeft = enemy.getX();
+                int enemyRight = enemy.getX() + enemy.getWidth();
+
+                boolean xOverlap = (myLeft < enemyRight) && (myRight > enemyLeft);
+                boolean isAbove = enemy.getY() < this.y;
+
+                if (xOverlap && isAbove) {
+                    isShooting = true;
+                    break; 
+                }
+            }
+        }
     }
 
-    // 鍵盤按下事件 (修正後的版本)
+    // --- 鍵盤按下事件 ---
     public void keyPressed(KeyEvent e) {
         int key = e.getKeyCode();
         
-        // --- A. 移動邏輯 (水平) ---
-        // 必須使用獨立的 if 判斷，確保左右鍵同時按下時能正確設定 dx
-        if (key == KeyEvent.VK_LEFT || key == KeyEvent.VK_A) {
-            dx = -1; 
-        } 
-        if (key == KeyEvent.VK_RIGHT || key == KeyEvent.VK_D) {
-            dx = 1; 
-        }
-        
-        // --- B. 移動邏輯 (垂直) ---
-        // 必須使用獨立的 if 判斷
-        if (key == KeyEvent.VK_UP || key == KeyEvent.VK_W) {
-            dy = -1;
-        } 
-        if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_S) {
-            dy = 1;
-        }
-        
-        // --- C. 射擊邏輯 ---
-        // 必須與移動邏輯完全獨立，使用獨立的 if 判斷
-        if (key == KeyEvent.VK_SPACE) {
-            isShooting = true;
-        }
+        if (key == KeyEvent.VK_LEFT || key == KeyEvent.VK_A) dx = -1; 
+        if (key == KeyEvent.VK_RIGHT || key == KeyEvent.VK_D) dx = 1; 
+        if (key == KeyEvent.VK_UP || key == KeyEvent.VK_W) dy = -1;
+        if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_S) dy = 1;
     }
-    // 鍵盤釋放事件 (修正後的版本)
+
+    // --- 鍵盤釋放事件 ---
     public void keyReleased(KeyEvent e) {
         int key = e.getKeyCode();
 
-        // --- A. 停止水平移動 ---
-        // 檢查釋放的鍵是否與當前移動方向一致，如果是，則停止該方向的移動。
-        // 注意：這裡不使用 else if，但用邏輯判斷避免衝突。
-        if ((key == KeyEvent.VK_LEFT || key == KeyEvent.VK_A) && dx < 0) {
-            dx = 0;
-        } 
-        if ((key == KeyEvent.VK_RIGHT || key == KeyEvent.VK_D) && dx > 0) {
-            dx = 0;
-        }
-        
-        // --- B. 停止垂直移動 ---
-        if ((key == KeyEvent.VK_UP || key == KeyEvent.VK_W) && dy < 0) {
-            dy = 0;
-        } 
-        if ((key == KeyEvent.VK_DOWN || key == KeyEvent.VK_S) && dy > 0) {
-            dy = 0;
-        }
+        if ((key == KeyEvent.VK_LEFT || key == KeyEvent.VK_A) && dx < 0) dx = 0;
+        if ((key == KeyEvent.VK_RIGHT || key == KeyEvent.VK_D) && dx > 0) dx = 0;
+        if ((key == KeyEvent.VK_UP || key == KeyEvent.VK_W) && dy < 0) dy = 0;
+        if ((key == KeyEvent.VK_DOWN || key == KeyEvent.VK_S) && dy > 0) dy = 0;
+    }
 
-        // --- C. 停止射擊 ---
-        if (key == KeyEvent.VK_SPACE) {
-            isShooting = false;
+    // --- 核心傷害方法 ---
+    public void takeDamage(int damage) {
+        if (!isInvulnerable) {
+            currentHp -= damage;
+            isInvulnerable = true;
+            invulnerabilityEndTime = System.currentTimeMillis() + INVULNERABILITY_DURATION;
+
+            if (currentHp <= 0) {
+                currentHp = 0;
+                isAlive = false;
+            }
+        }
+    }
+
+    // --- Getter 方法 ---
+    public int getCurrentHp() { return currentHp; }
+    public int getMaxHp() { return maxHp; }
+    public boolean isAlive() { return isAlive; }
+
+    public void draw(Graphics g) {
+        if (!isInvulnerable || (System.currentTimeMillis() % 200 < 100)) {
+             g.setColor(Color.CYAN);
+             g.fillRect(x, y, SIZE, SIZE);
         }
     }
     
     public boolean isShooting() {
-        // 獲取當前時間
         long currentTime = System.currentTimeMillis();
-        
-        // 判斷是否正在按住空格鍵 (isShooting) 且冷卻時間已過
         if (isShooting && (currentTime - lastShotTime > SHOOT_COOLDOWN)) {
-            // 更新上次射擊時間
-            lastShotTime = currentTime; 
-            return true; // 允許發射
+            lastShotTime = currentTime;
+            return true;
         }
-        return false; // 不發射
+        return false;
     }
     
-    public int getBulletStartX() {
-        return x + (SIZE / 2);
-    }
-    public int getBulletStartY() {
-        return y;
-    }
-    
-    // [Getter for Collision]
-    public java.awt.Rectangle getBounds() {
-        return new java.awt.Rectangle(x, y, SIZE, SIZE);
-    }
+    public int getBulletStartX() { return x + (SIZE / 2); }
+    public int getBulletStartY() { return y; }
+    public java.awt.Rectangle getBounds() { return new java.awt.Rectangle(x, y, SIZE, SIZE); }
 }
